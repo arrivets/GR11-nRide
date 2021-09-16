@@ -18,8 +18,7 @@ samples, guidance on mobile development, and a full API reference.
 ## Roadmap
 
 The following is a high level roadmap of what we would like to achieve as part
-of the [hackathon](https://gitcoin.co/issue/nknorg/nBounty/8/100026451), but is
-obviously not complete for a production app.
+of the [hackathon](https://gitcoin.co/issue/nknorg/nBounty/8/100026451).
 
 - [ ] Android
     - [x] Display a map with current location
