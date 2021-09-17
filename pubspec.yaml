@@ -40,6 +40,9 @@ dependencies:
   # location
   location: ^4.2.0
 
+  # nkn
+  nkn_sdk_flutter: ^0.1.12
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
