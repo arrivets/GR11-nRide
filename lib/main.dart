@@ -1,10 +1,13 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:location/location.dart';
 import 'package:nkn_sdk_flutter/client.dart';
-import 'package:nkn_sdk_flutter/utils/hash.dart';
-import 'package:nkn_sdk_flutter/utils/hex.dart';
 import 'package:nkn_sdk_flutter/wallet.dart';
+
+const _worldTopic = "nride_world";
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,6 +41,18 @@ class MapSampleState extends State<MapSample> {
   final Set<Marker> _markers = <Marker>{};
   final LatLng _initialCameraPostion = const LatLng(20, 20);
   Client? _nknClient;
+  BitmapDescriptor? _customMarker;
+
+  @override
+  void initState() {
+    super.initState();
+    BitmapDescriptor.fromAssetImage(
+      const ImageConfiguration(size: Size(48, 48)),
+      'assets/user.png',
+    ).then((onValue) {
+      _customMarker = onValue;
+    });
+  }
 
   // Request user permissions for location services, and wire location services
   // to move camera and marker when location changes.
@@ -87,6 +102,7 @@ class MapSampleState extends State<MapSample> {
   @override
   void dispose() {
     super.dispose();
+    _nknClient?.unsubscribe(topic: _worldTopic);
   }
 
   @override
@@ -101,19 +117,23 @@ class MapSampleState extends State<MapSample> {
         onMapCreated: _onMapCreated,
         markers: _markers,
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _join,
-        child: const Text('Join'),
-      ),
+      floatingActionButton: (_nknClient == null)
+          ? FloatingActionButton(
+              onPressed: _join,
+              child: const Text('Join'),
+            )
+          : FloatingActionButton(
+              onPressed: _leave,
+              child: const Text('Leave'),
+            ),
     );
   }
 
   void _join() async {
     if (_nknClient == null) {
-      Wallet wallet = await Wallet.restore(
-          '{"Version":2,"IV":"d103adf904b4b2e8cca9659e88201e5d","MasterKey":"20042c80ccb809c72eb5cf4390b29b2ef0efb014b38f7229d48fb415ccf80668","SeedEncrypted":"3bcdca17d84dc7088c4b3f929cf1e96cf66c988f2b306f076fd181e04c5be187","Address":"NKNVgahGfYYxYaJdGZHZSxBg2QJpUhRH24M7","Scrypt":{"Salt":"a455be75074c2230","N":32768,"R":8,"P":1}}',
-          config: WalletConfig(password: '123'));
-
+      // create a new transient wallet
+      // in future we might want to persist wallets and accounts to be reused
+      Wallet wallet = await Wallet.create(null, config: WalletConfig());
       _nknClient = await Client.create(wallet.seed);
     }
     _nknClient?.onConnect.listen((event) {
@@ -121,15 +141,42 @@ class MapSampleState extends State<MapSample> {
       print(event.node);
     });
     _nknClient?.onMessage.listen((event) {
-      print('------onMessage1-----');
-      print(event.type);
-      print(event.encrypted);
-      print(event.messageId);
-      print(event.data);
-      print(event.src);
+      var source = event.src;
+      Map<String, dynamic> msg = jsonDecode(event.data!);
+      var pos = LatLng(
+        msg['latitude'],
+        msg['longitude'],
+      );
+      setState(() {
+        _markers.add(Marker(
+            markerId: MarkerId(source!),
+            position: pos,
+            icon: _customMarker ?? BitmapDescriptor.defaultMarker));
+      });
     });
-    // genChannelId('nride_world')
-    var res = await _nknClient?.subscribe(topic: 'nride_world');
+    var res = await _nknClient?.subscribe(topic: _worldTopic);
     print(res);
+    Timer.periodic(
+      const Duration(seconds: 5),
+      (Timer t) async {
+        var position = await _location.getLocation();
+        _nknClient?.publishText(
+          _worldTopic,
+          jsonEncode(
+            {
+              'latitude': position.latitude!,
+              'longitude': position.longitude!,
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  void _leave() async {
+    if (_nknClient != null) {
+      await _nknClient?.unsubscribe(topic: _worldTopic);
+      setState(() => {_nknClient = null});
+    }
   }
 }
