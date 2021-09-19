@@ -22,8 +22,8 @@ of the [hackathon](https://gitcoin.co/issue/nknorg/nBounty/8/100026451).
 
 - [ ] Android
     - [x] Display a map with current location
-    - [ ] Create/Join NKN pub/sub group corresponding to geographical area
-    - [ ] Display positions of other users in the same area
+    - [x] Create/Join NKN pub/sub group corresponding to geographical area
+    - [x] Display positions of other users in the same area
     - [ ] Different UI for riders and passengers. 
           Rider broadcasts 'availability'; passengers display available riders
     - [ ] Passengers send 'request' to available riders
