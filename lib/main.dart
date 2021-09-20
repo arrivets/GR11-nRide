@@ -40,18 +40,66 @@ class MapSampleState extends State<MapSample> {
   final Location _location = Location();
   final Set<Marker> _markers = <Marker>{};
   final LatLng _initialCameraPostion = const LatLng(20, 20);
+  LatLng _currentPosition = const LatLng(20, 20);
   Client? _nknClient;
   BitmapDescriptor? _customMarker;
+  // _subscribed is true when the node is subscribed to the area topic
+  bool _subscribed = false;
+  // _status indicates status of node between subscribing and unsubscribing. It
+  // should be null when the state transition is complete.
+  String? _status;
+  // _broadcast determines whether the node should periodically broadcast its
+  // position. It should be set to false when the node leaves.
+  bool _broadcast = false;
 
   @override
   void initState() {
     super.initState();
+
+    // loading icons
     BitmapDescriptor.fromAssetImage(
       const ImageConfiguration(size: Size(48, 48)),
       'assets/user.png',
     ).then((onValue) {
       _customMarker = onValue;
     });
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+    _nknClient?.unsubscribe(topic: _worldTopic);
+    _nknClient?.close();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("nRide"),
+        actions: <Widget>[
+          Container(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+            child: Text(_status ?? '', textAlign: TextAlign.left),
+          ),
+        ],
+      ),
+      body: GoogleMap(
+        initialCameraPosition:
+            CameraPosition(target: _initialCameraPostion, zoom: 15),
+        onMapCreated: _onMapCreated,
+        markers: _markers,
+      ),
+      floatingActionButton: (_subscribed)
+          ? FloatingActionButton(
+              onPressed: (_status == null) ? _leave : null,
+              child: const Text('Leave'),
+            )
+          : FloatingActionButton(
+              onPressed: (_status == null) ? _join : null,
+              child: const Text('Join'),
+            ),
+    );
   }
 
   // Request user permissions for location services, and wire location services
@@ -78,11 +126,16 @@ class MapSampleState extends State<MapSample> {
       }
     }
 
+    // set location settings
     _location.changeSettings(distanceFilter: 1);
 
     _location.onLocationChanged.listen((l) {
       var currentLatLng = LatLng(l.latitude!, l.longitude!);
+      if (currentLatLng == _currentPosition) {
+        return;
+      }
       setState(() {
+        _currentPosition = currentLatLng;
         _markers.add(Marker(
           markerId: const MarkerId('current_location'),
           position: currentLatLng,
@@ -99,50 +152,61 @@ class MapSampleState extends State<MapSample> {
     });
   }
 
-  @override
-  void dispose() {
-    super.dispose();
-    _nknClient?.unsubscribe(topic: _worldTopic);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("nRide"),
-      ),
-      body: GoogleMap(
-        initialCameraPosition:
-            CameraPosition(target: _initialCameraPostion, zoom: 15),
-        onMapCreated: _onMapCreated,
-        markers: _markers,
-      ),
-      floatingActionButton: (_nknClient == null)
-          ? FloatingActionButton(
-              onPressed: _join,
-              child: const Text('Join'),
-            )
-          : FloatingActionButton(
-              onPressed: _leave,
-              child: const Text('Leave'),
-            ),
-    );
-  }
-
   void _join() async {
-    if (_nknClient == null) {
-      // create a new transient wallet
-      // in future we might want to persist wallets and accounts to be reused
-      Wallet wallet = await Wallet.create(null, config: WalletConfig());
-      _nknClient = await Client.create(wallet.seed);
+    if (_nknClient != null) {
+      return;
     }
-    _nknClient?.onConnect.listen((event) {
-      print('------onConnect1-----');
-      print(event.node);
+
+    // create a new transient wallet
+    // in future we might want to persist wallets and accounts to be reused
+    Wallet wallet = await Wallet.create(null, config: WalletConfig());
+    _nknClient = await Client.create(wallet.seed);
+
+    // connect to NKN network and subscribe to the area topic.
+    setState(() => {_status = 'connecting...'});
+    _nknClient?.onConnect.listen((event) async {
+      setState(() => {_status = 'subscribing...'});
+      await _nknClient?.subscribe(
+        topic: _worldTopic,
+        duration: 20, // 20 blocks
+      );
+      while (true) {
+        var sub = await _nknClient!.getSubscription(
+          topic: _worldTopic,
+          subscriber: _nknClient!.address,
+        );
+        if (sub?.isNotEmpty ?? false) {
+          var expiresAt = sub?['expiresAt'] ?? 0;
+          if (expiresAt > 0) {
+            break;
+          }
+        }
+        await Future.delayed(const Duration(seconds: 1));
+      }
+      setState(() => {
+            _subscribed = true,
+            _status = null,
+            _broadcast = true,
+          });
     });
+
+    // listen to incoming messages from other users and track their positions.
     _nknClient?.onMessage.listen((event) {
       var source = event.src;
+      // if this is me, do nothing
+      if (source == _nknClient!.address) {
+        return;
+      }
       Map<String, dynamic> msg = jsonDecode(event.data!);
+      // handle removing markers for users that are leaving
+      bool remove = msg['remove'] ?? false;
+      if (remove) {
+        setState(() {
+          _markers.removeWhere((m) => m.markerId == MarkerId(source!));
+        });
+        return;
+      }
+      // add or update markers
       var pos = LatLng(
         msg['latitude'],
         msg['longitude'],
@@ -154,11 +218,14 @@ class MapSampleState extends State<MapSample> {
             icon: _customMarker ?? BitmapDescriptor.defaultMarker));
       });
     });
-    var res = await _nknClient?.subscribe(topic: _worldTopic);
-    print(res);
+
+    // periodically broadcast my position
     Timer.periodic(
       const Duration(seconds: 5),
       (Timer t) async {
+        if (!_broadcast) {
+          return;
+        }
         var position = await _location.getLocation();
         _nknClient?.publishText(
           _worldTopic,
@@ -175,8 +242,44 @@ class MapSampleState extends State<MapSample> {
 
   void _leave() async {
     if (_nknClient != null) {
+      // stop broadcasting my position
+      setState(() => {
+            _broadcast = false,
+            _status = 'unsubscribing...',
+          });
+
+      // notify other users that I am leaving
+      _nknClient?.publishText(
+        _worldTopic,
+        jsonEncode(
+          {
+            'remove': true,
+          },
+        ),
+      );
+
+      // unsubscribe and close
       await _nknClient?.unsubscribe(topic: _worldTopic);
-      setState(() => {_nknClient = null});
+      while (true) {
+        var sub = await _nknClient!.getSubscription(
+          topic: _worldTopic,
+          subscriber: _nknClient!.address,
+        );
+        if (sub?.isNotEmpty ?? false) {
+          var expiresAt = sub?['expiresAt'] ?? 0;
+          if (expiresAt == 0) {
+            break;
+          }
+        }
+        await Future.delayed(const Duration(seconds: 1));
+      }
+      setState(() => _status = 'disconnecting...');
+      await _nknClient!.close();
+      setState(() => {
+            _subscribed = false,
+            _status = null,
+            _nknClient = null,
+          });
     }
   }
 }
