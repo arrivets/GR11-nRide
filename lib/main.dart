@@ -8,12 +8,13 @@ import 'package:nkn_sdk_flutter/client.dart';
 import 'package:nkn_sdk_flutter/wallet.dart';
 
 const _worldTopic = "nride_world";
+const _myLocationTag = "my_location";
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   Wallet.install();
   Client.install();
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -48,9 +49,6 @@ class MapSampleState extends State<MapSample> {
   // _status indicates status of node between subscribing and unsubscribing. It
   // should be null when the state transition is complete.
   String? _status;
-  // _broadcast determines whether the node should periodically broadcast its
-  // position. It should be set to false when the node leaves.
-  bool _broadcast = false;
 
   @override
   void initState() {
@@ -137,7 +135,7 @@ class MapSampleState extends State<MapSample> {
       setState(() {
         _currentPosition = currentLatLng;
         _markers.add(Marker(
-          markerId: const MarkerId('current_location'),
+          markerId: const MarkerId(_myLocationTag),
           position: currentLatLng,
         ));
       });
@@ -186,7 +184,6 @@ class MapSampleState extends State<MapSample> {
       setState(() => {
             _subscribed = true,
             _status = null,
-            _broadcast = true,
           });
     });
 
@@ -223,7 +220,8 @@ class MapSampleState extends State<MapSample> {
     Timer.periodic(
       const Duration(seconds: 5),
       (Timer t) async {
-        if (!_broadcast) {
+        bool shouldBroadcast = _subscribed && (_status == null);
+        if (!shouldBroadcast) {
           return;
         }
         var position = await _location.getLocation();
@@ -238,13 +236,31 @@ class MapSampleState extends State<MapSample> {
         );
       },
     );
+
+    // periodically clear unsubscribed users
+    Timer.periodic(
+      const Duration(seconds: 5),
+      (Timer t) async {
+        bool shouldQuery = _subscribed && (_status == null);
+        if (!shouldQuery) {
+          return;
+        }
+        var subscriptions =
+            await _nknClient!.getSubscribers(topic: _worldTopic);
+        setState(() {
+          _markers.removeWhere((element) =>
+              element.markerId.value != _myLocationTag &&
+              !subscriptions!.containsKey(element.markerId.value));
+        });
+      },
+    );
   }
 
   void _leave() async {
     if (_nknClient != null) {
-      // stop broadcasting my position
+      // setting _status to a non-null value will cause the timers that
+      // broadcast our position and clear orphan markers to be stopped.
       setState(() => {
-            _broadcast = false,
             _status = 'unsubscribing...',
           });
 
@@ -273,12 +289,15 @@ class MapSampleState extends State<MapSample> {
         }
         await Future.delayed(const Duration(seconds: 1));
       }
+
       setState(() => _status = 'disconnecting...');
       await _nknClient!.close();
       setState(() => {
             _subscribed = false,
             _status = null,
             _nknClient = null,
+            _markers.removeWhere(
+                (element) => element.markerId.value != _myLocationTag),
           });
     }
   }
