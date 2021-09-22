@@ -12,31 +12,8 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   Wallet.install();
   Client.install();
-  // loading icons
-  BitmapDescriptor.fromAssetImage(
-    const ImageConfiguration(size: Size(24, 24)),
-    'assets/passenger.png',
-  ).then((onValue) {
-    PassengerMarker = onValue;
-  });
-  BitmapDescriptor.fromAssetImage(
-    const ImageConfiguration(size: Size(24, 24)),
-    'assets/car.png',
-  ).then((onValue) {
-    DriverMarker = onValue;
-  });
-  BitmapDescriptor.fromAssetImage(
-    const ImageConfiguration(size: Size(24, 24)),
-    'assets/car1.png',
-  ).then((onValue) {
-    CarMarker = onValue;
-  });
-  BitmapDescriptor.fromAssetImage(
-    const ImageConfiguration(size: Size(24, 24)),
-    'assets/pin.png',
-  ).then((onValue) {
-    PinMarker = onValue;
-  });
+  loadMarkers();
+  loadMapStyle();
   runApp(const MyApp());
 }
 

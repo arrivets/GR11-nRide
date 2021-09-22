@@ -39,6 +39,7 @@ class PassengerViewState extends State<PassengerView> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("nRide"),
+        automaticallyImplyLeading: false,
       ),
       body: GoogleMap(
         initialCameraPosition:
@@ -53,6 +54,8 @@ class PassengerViewState extends State<PassengerView> {
   // to move camera and marker when location changes.
   void _onMapCreated(GoogleMapController controller) async {
     _controller = controller;
+
+    _controller!.setMapStyle(CustomMapStyle);
 
     bool _serviceEnabled;
     PermissionStatus _permissionGranted;
@@ -86,7 +89,7 @@ class PassengerViewState extends State<PassengerView> {
         _markers.add(Marker(
           markerId: const MarkerId(MyLocationTag),
           position: currentLatLng,
-          icon: PinMarker!,
+          icon: UserFocusMarker!,
         ));
       });
       _controller!.animateCamera(

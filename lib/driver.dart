@@ -77,6 +77,8 @@ class DriverViewState extends State<DriverView> {
   void _onMapCreated(GoogleMapController controller) async {
     _controller = controller;
 
+    _controller!.setMapStyle(CustomMapStyle);
+
     bool _serviceEnabled;
     PermissionStatus _permissionGranted;
 
@@ -109,7 +111,7 @@ class DriverViewState extends State<DriverView> {
         _markers.add(Marker(
           markerId: const MarkerId(MyLocationTag),
           position: currentLatLng,
-          icon: PinMarker!,
+          icon: CarFocusMarker!,
         ));
       });
       _controller!.animateCamera(
@@ -188,7 +190,7 @@ class DriverViewState extends State<DriverView> {
         _markers.add(Marker(
           markerId: MarkerId(source!),
           position: pos,
-          icon: PassengerMarker!,
+          icon: UserMarker!,
         ));
       });
 

@@ -71,10 +71,14 @@ flutter:
   #   - images/a_dot_ham.jpeg
   assets:
     - assets/car.png
-    - assets/pin.png
-    - assets/car1.png
-    - assets/passenger.png
-
+    - assets/car-focus.png
+    - assets/car-pin.png
+    - assets/user.png
+    - assets/user-flag.png
+    - assets/user-focus.png
+    - assets/wheel.png
+    - assets/map-style.txt
+    
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/assets-and-images/#resolution-aware.
 
