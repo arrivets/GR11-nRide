@@ -38,7 +38,7 @@ class PassengerViewState extends State<PassengerView> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("nRide"),
+        title: const Text("nRide passenger"),
         automaticallyImplyLeading: false,
       ),
       body: GoogleMap(

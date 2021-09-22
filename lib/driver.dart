@@ -45,7 +45,7 @@ class DriverViewState extends State<DriverView> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("nRide"),
+        title: const Text("nRide driver"),
         automaticallyImplyLeading: false,
         actions: <Widget>[
           Container(
@@ -227,19 +227,23 @@ class DriverViewState extends State<DriverView> {
       );
 
       // unsubscribe and close
-      await _nknClient?.unsubscribe(topic: WorldTopic);
-      while (true) {
-        var sub = await _nknClient!.getSubscription(
-          topic: WorldTopic,
-          subscriber: _nknClient!.address,
-        );
-        if (sub?.isNotEmpty ?? false) {
-          var expiresAt = sub?['expiresAt'] ?? 0;
-          if (expiresAt == 0) {
-            break;
+      try {
+        await _nknClient?.unsubscribe(topic: WorldTopic);
+        while (true) {
+          var sub = await _nknClient!.getSubscription(
+            topic: WorldTopic,
+            subscriber: _nknClient!.address,
+          );
+          if (sub?.isNotEmpty ?? false) {
+            var expiresAt = sub?['expiresAt'] ?? 0;
+            if (expiresAt == 0) {
+              break;
+            }
           }
+          await Future.delayed(const Duration(seconds: 1));
         }
-        await Future.delayed(const Duration(seconds: 1));
+      } catch (e) {
+        print('error trying to unsubscribe: ${e.toString()}');
       }
 
       setState(() => _status = 'disconnecting...');
