@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:location/location.dart';
+import 'package:location/location.dart' as loc;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:nkn_sdk_flutter/client.dart';
 import 'package:nkn_sdk_flutter/wallet.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:google_place/google_place.dart';
+
 import 'utils.dart';
 
 class PassengerView extends StatefulWidget {
@@ -16,8 +18,10 @@ class PassengerView extends StatefulWidget {
 }
 
 class PassengerViewState extends State<PassengerView> {
-  GoogleMapController? _controller;
-  final Location _location = Location();
+  GoogleMapController? _mapController;
+  final loc.Location _location = loc.Location();
+  GooglePlace? _googlePlace;
+  List<AutocompletePrediction> _predictions = [];
   final Set<Marker> _markers = <Marker>{};
   final LatLng _initialCameraPostion = const LatLng(20, 20);
   LatLng _currentPosition = const LatLng(20, 20);
@@ -26,6 +30,7 @@ class PassengerViewState extends State<PassengerView> {
   @override
   void initState() {
     super.initState();
+    _googlePlace = GooglePlace('AIzaSyDUmOaeiGYOjxZoNPd8VS9Xhd0uEAn3k30');
   }
 
   @override
@@ -41,11 +46,76 @@ class PassengerViewState extends State<PassengerView> {
         title: const Text("nRide passenger"),
         automaticallyImplyLeading: false,
       ),
-      body: GoogleMap(
-        initialCameraPosition:
-            CameraPosition(target: _initialCameraPostion, zoom: 15),
-        onMapCreated: _onMapCreated,
-        markers: _markers,
+      body: Stack(
+        children: <Widget>[
+          GoogleMap(
+            initialCameraPosition:
+                CameraPosition(target: _initialCameraPostion, zoom: 15),
+            onMapCreated: _onMapCreated,
+            markers: _markers,
+          ),
+          Container(
+            margin: EdgeInsets.only(right: 20, left: 20, top: 20),
+            child: Column(
+              children: <Widget>[
+                TextField(
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: Colors.white,
+                    labelText: "Where to",
+                    focusedBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: Colors.blue,
+                        width: 2.0,
+                      ),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderSide: BorderSide(
+                        color: Colors.black54,
+                        width: 2.0,
+                      ),
+                    ),
+                  ),
+                  onChanged: (value) {
+                    if (value.isNotEmpty) {
+                      _autoCompleteSearch(value);
+                    } else {
+                      if (_predictions.length > 0 && mounted) {
+                        setState(() {
+                          _predictions = [];
+                        });
+                      }
+                    }
+                  },
+                ),
+                SizedBox(
+                  height: 10,
+                ),
+                ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _predictions.length,
+                  itemBuilder: (context, index) {
+                    return Container(
+                      color: Colors.white,
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          child: Icon(
+                            Icons.pin_drop,
+                            color: Colors.white,
+                          ),
+                        ),
+                        title: Text(_predictions[index].description!),
+                        onTap: () {
+                          debugPrint(_predictions[index].placeId);
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -53,12 +123,12 @@ class PassengerViewState extends State<PassengerView> {
   // Request user permissions for location services, and wire location services
   // to move camera and marker when location changes.
   void _onMapCreated(GoogleMapController controller) async {
-    _controller = controller;
+    _mapController = controller;
 
-    _controller!.setMapStyle(CustomMapStyle);
+    _mapController!.setMapStyle(CustomMapStyle);
 
     bool _serviceEnabled;
-    PermissionStatus _permissionGranted;
+    loc.PermissionStatus _permissionGranted;
 
     _serviceEnabled = await _location.serviceEnabled();
     if (!_serviceEnabled) {
@@ -69,9 +139,9 @@ class PassengerViewState extends State<PassengerView> {
     }
 
     _permissionGranted = await _location.hasPermission();
-    if (_permissionGranted == PermissionStatus.denied) {
+    if (_permissionGranted == loc.PermissionStatus.denied) {
       _permissionGranted = await _location.requestPermission();
-      if (_permissionGranted != PermissionStatus.granted) {
+      if (_permissionGranted != loc.PermissionStatus.granted) {
         return;
       }
     }
@@ -92,7 +162,7 @@ class PassengerViewState extends State<PassengerView> {
           icon: UserFocusMarker!,
         ));
       });
-      _controller!.animateCamera(
+      _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(
           CameraPosition(
             target: currentLatLng,
@@ -163,5 +233,14 @@ class PassengerViewState extends State<PassengerView> {
         ));
       });
     });
+  }
+
+  void _autoCompleteSearch(String value) async {
+    var result = await _googlePlace!.autocomplete.get(value);
+    if (result != null && result.predictions != null && mounted) {
+      setState(() {
+        _predictions = result.predictions!;
+      });
+    }
   }
 }

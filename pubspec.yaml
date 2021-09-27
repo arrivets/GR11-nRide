@@ -43,6 +43,9 @@ dependencies:
   # nkn
   nkn_sdk_flutter: ^0.1.12
 
+  # Google places
+  google_place: ^0.4.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
