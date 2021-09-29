@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 const WorldTopic = "nride_world";
 const MyLocationTag = "my_location";
+const DestinationTag = "destination";
 
 BitmapDescriptor? UserMarker; // indicates passengers in Driver view
 BitmapDescriptor? UserFocusMarker; // indicates self in Passenger view

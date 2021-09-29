@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:location/location.dart' as loc;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -22,6 +23,8 @@ class PassengerViewState extends State<PassengerView> {
   final loc.Location _location = loc.Location();
   GooglePlace? _googlePlace;
   List<AutocompletePrediction> _predictions = [];
+  bool _showPredictions = false;
+  DetailsResult? _detailsResult;
   final Set<Marker> _markers = <Marker>{};
   final LatLng _initialCameraPostion = const LatLng(20, 20);
   LatLng _currentPosition = const LatLng(20, 20);
@@ -53,6 +56,7 @@ class PassengerViewState extends State<PassengerView> {
                 CameraPosition(target: _initialCameraPostion, zoom: 15),
             onMapCreated: _onMapCreated,
             markers: _markers,
+            onTap: (LatLng latLng) => setState(() => _showPredictions = false),
           ),
           Container(
             margin: EdgeInsets.only(right: 20, left: 20, top: 20),
@@ -79,6 +83,7 @@ class PassengerViewState extends State<PassengerView> {
                   onChanged: (value) {
                     if (value.isNotEmpty) {
                       _autoCompleteSearch(value);
+                      _showPredictions = true;
                     } else {
                       if (_predictions.length > 0 && mounted) {
                         setState(() {
@@ -91,26 +96,30 @@ class PassengerViewState extends State<PassengerView> {
                 SizedBox(
                   height: 10,
                 ),
-                ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _predictions.length,
-                  itemBuilder: (context, index) {
-                    return Container(
-                      color: Colors.white,
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          child: Icon(
-                            Icons.pin_drop,
-                            color: Colors.white,
+                Visibility(
+                  visible: _showPredictions,
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _predictions.length,
+                    itemBuilder: (context, index) {
+                      return Container(
+                        color: Colors.white,
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            child: Icon(
+                              Icons.pin_drop,
+                              color: Colors.white,
+                            ),
                           ),
+                          title: Text(_predictions[index].description!),
+                          onTap: () async {
+                            debugPrint(_predictions[index].placeId);
+                            await _getDetails(_predictions[index].placeId!);
+                          },
                         ),
-                        title: Text(_predictions[index].description!),
-                        onTap: () {
-                          debugPrint(_predictions[index].placeId);
-                        },
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
               ],
             ),
@@ -175,7 +184,7 @@ class PassengerViewState extends State<PassengerView> {
     _run();
   }
 
-  void _run() async {
+  Future<void> _run() async {
     // create a new transient wallet
     // in future we might want to persist wallets and accounts to be reused
     Wallet wallet = await Wallet.create(null, config: WalletConfig());
@@ -235,12 +244,53 @@ class PassengerViewState extends State<PassengerView> {
     });
   }
 
-  void _autoCompleteSearch(String value) async {
+  Future<void> _autoCompleteSearch(String value) async {
     var result = await _googlePlace!.autocomplete.get(value);
     if (result != null && result.predictions != null && mounted) {
       setState(() {
         _predictions = result.predictions!;
       });
     }
+  }
+
+  Future<void> _getDetails(String placeId) async {
+    var result = await _googlePlace!.details.get(placeId);
+    if (result != null && result.result != null && mounted) {
+      setState(() {
+        _detailsResult = result.result;
+        _showPredictions = false;
+        _markers.add(Marker(
+          markerId: const MarkerId(DestinationTag),
+          position: LatLng(
+            result.result!.geometry!.location!.lat!,
+            result.result!.geometry!.location!.lng!,
+          ),
+          icon: BitmapDescriptor.defaultMarker,
+        ));
+        _mapController!.animateCamera(
+          CameraUpdate.newLatLngBounds(
+            getBounds(_markers.toList()),
+            10,
+          ),
+        );
+      });
+    }
+  }
+
+  LatLngBounds getBounds(List<Marker> markers) {
+    var lngs = markers.map<double>((m) => m.position.longitude).toList();
+    var lats = markers.map<double>((m) => m.position.latitude).toList();
+
+    double topMost = lngs.reduce(max);
+    double leftMost = lats.reduce(min);
+    double rightMost = lats.reduce(max);
+    double bottomMost = lngs.reduce(min);
+
+    LatLngBounds bounds = LatLngBounds(
+      northeast: LatLng(rightMost, topMost),
+      southwest: LatLng(leftMost, bottomMost),
+    );
+
+    return bounds;
   }
 }
