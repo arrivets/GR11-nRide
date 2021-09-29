@@ -2,6 +2,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+const GoogleAPIKey = 'AIzaSyDUmOaeiGYOjxZoNPd8VS9Xhd0uEAn3k30';
+
 const WorldTopic = "nride_world";
 const MyLocationTag = "my_location";
 const DestinationTag = "destination";

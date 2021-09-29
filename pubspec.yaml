@@ -37,14 +37,17 @@ dependencies:
   # Google maps
   google_maps_flutter: ^2.0.8
   
-  # location
+  # lLocation
   location: ^4.2.0
 
-  # nkn
+  # NKN
   nkn_sdk_flutter: ^0.1.12
 
   # Google places
   google_place: ^0.4.3
+
+  # Get directions between places
+  flutter_polyline_points: ^1.0.0
 
 dev_dependencies:
   flutter_test:

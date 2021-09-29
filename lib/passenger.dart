@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:location/location.dart' as loc;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -19,26 +20,39 @@ class PassengerView extends StatefulWidget {
 }
 
 class PassengerViewState extends State<PassengerView> {
+  // controller to update and animate the map view
   GoogleMapController? _mapController;
-  final loc.Location _location = loc.Location();
-  GooglePlace? _googlePlace;
-  List<AutocompletePrediction> _predictions = [];
-  bool _showPredictions = false;
-  DetailsResult? _detailsResult;
   final Set<Marker> _markers = <Marker>{};
+
+  // service to track where we are
+  final loc.Location _locationService = loc.Location();
   final LatLng _initialCameraPostion = const LatLng(20, 20);
   LatLng _currentPosition = const LatLng(20, 20);
+
+  // service to find destination addresses
+  GooglePlace? _googlePlaceService;
+  List<AutocompletePrediction> _predictions = [];
+  bool _showPredictions = false;
+
+  // for drawing routes between current location and destination
+  PolylinePoints? _polylinePointsService;
+  final Set<Polyline> _polylines = {};
+  List<LatLng> _polylineCoordinates = [];
+
+  // client to connect to and use the NKN network
   Client? _nknClient;
 
   @override
   void initState() {
     super.initState();
-    _googlePlace = GooglePlace('AIzaSyDUmOaeiGYOjxZoNPd8VS9Xhd0uEAn3k30');
+    _googlePlaceService = GooglePlace(GoogleAPIKey);
+    _polylinePointsService = PolylinePoints();
   }
 
   @override
   void dispose() {
     super.dispose();
+    _mapController!.dispose();
     _nknClient?.close();
   }
 
@@ -56,6 +70,7 @@ class PassengerViewState extends State<PassengerView> {
                 CameraPosition(target: _initialCameraPostion, zoom: 15),
             onMapCreated: _onMapCreated,
             markers: _markers,
+            polylines: _polylines,
             onTap: (LatLng latLng) => setState(() => _showPredictions = false),
           ),
           Container(
@@ -85,7 +100,7 @@ class PassengerViewState extends State<PassengerView> {
                       _autoCompleteSearch(value);
                       _showPredictions = true;
                     } else {
-                      if (_predictions.length > 0 && mounted) {
+                      if (_predictions.isNotEmpty && mounted) {
                         setState(() {
                           _predictions = [];
                         });
@@ -114,7 +129,8 @@ class PassengerViewState extends State<PassengerView> {
                           title: Text(_predictions[index].description!),
                           onTap: () async {
                             debugPrint(_predictions[index].placeId);
-                            await _getDetails(_predictions[index].placeId!);
+                            await _chooseDestination(
+                                _predictions[index].placeId!);
                           },
                         ),
                       );
@@ -139,26 +155,26 @@ class PassengerViewState extends State<PassengerView> {
     bool _serviceEnabled;
     loc.PermissionStatus _permissionGranted;
 
-    _serviceEnabled = await _location.serviceEnabled();
+    _serviceEnabled = await _locationService.serviceEnabled();
     if (!_serviceEnabled) {
-      _serviceEnabled = await _location.requestService();
+      _serviceEnabled = await _locationService.requestService();
       if (!_serviceEnabled) {
         return;
       }
     }
 
-    _permissionGranted = await _location.hasPermission();
+    _permissionGranted = await _locationService.hasPermission();
     if (_permissionGranted == loc.PermissionStatus.denied) {
-      _permissionGranted = await _location.requestPermission();
+      _permissionGranted = await _locationService.requestPermission();
       if (_permissionGranted != loc.PermissionStatus.granted) {
         return;
       }
     }
 
     // set location settings
-    _location.changeSettings(distanceFilter: 1);
+    _locationService.changeSettings(distanceFilter: 1);
 
-    _location.onLocationChanged.listen((l) {
+    _locationService.onLocationChanged.listen((l) {
       var currentLatLng = LatLng(l.latitude!, l.longitude!);
       if (currentLatLng == _currentPosition) {
         return;
@@ -196,7 +212,7 @@ class PassengerViewState extends State<PassengerView> {
       Timer.periodic(
         const Duration(seconds: 2),
         (Timer t) async {
-          var position = await _location.getLocation();
+          var position = await _locationService.getLocation();
           _nknClient?.publishText(
             WorldTopic,
             jsonEncode(
@@ -245,7 +261,7 @@ class PassengerViewState extends State<PassengerView> {
   }
 
   Future<void> _autoCompleteSearch(String value) async {
-    var result = await _googlePlace!.autocomplete.get(value);
+    var result = await _googlePlaceService!.autocomplete.get(value);
     if (result != null && result.predictions != null && mounted) {
       setState(() {
         _predictions = result.predictions!;
@@ -253,31 +269,67 @@ class PassengerViewState extends State<PassengerView> {
     }
   }
 
-  Future<void> _getDetails(String placeId) async {
-    var result = await _googlePlace!.details.get(placeId);
-    if (result != null && result.result != null && mounted) {
+  Future<void> _chooseDestination(String placeId) async {
+    // Get location details and draw a Marker
+    DetailsResponse? details = await _googlePlaceService!.details.get(placeId);
+    if (details != null && details.result != null && mounted) {
       setState(() {
-        _detailsResult = result.result;
         _showPredictions = false;
         _markers.add(Marker(
           markerId: const MarkerId(DestinationTag),
           position: LatLng(
-            result.result!.geometry!.location!.lat!,
-            result.result!.geometry!.location!.lng!,
+            details.result!.geometry!.location!.lat!,
+            details.result!.geometry!.location!.lng!,
           ),
           icon: BitmapDescriptor.defaultMarker,
         ));
-        _mapController!.animateCamera(
-          CameraUpdate.newLatLngBounds(
-            getBounds(_markers.toList()),
-            10,
-          ),
-        );
+      });
+
+      // Animate camera to include all markers in the screen
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          _getBounds(_markers.toList()),
+          100,
+        ),
+      );
+
+      // Draw route between current location and destination
+
+      PolylineResult polyRoute =
+          await _polylinePointsService!.getRouteBetweenCoordinates(
+        GoogleAPIKey, // Google Maps API Key
+        PointLatLng(
+          _currentPosition.latitude,
+          _currentPosition.longitude,
+        ),
+        PointLatLng(
+          details.result!.geometry!.location!.lat!,
+          details.result!.geometry!.location!.lng!,
+        ),
+        travelMode: TravelMode.driving,
+      );
+
+      setState(() {
+        print('XXX updating polyline');
+        _polylineCoordinates = [];
+        if (polyRoute.points.isNotEmpty) {
+          polyRoute.points.forEach((PointLatLng point) {
+            _polylineCoordinates.add(LatLng(point.latitude, point.longitude));
+          });
+        }
+        var id = const PolylineId('route');
+        _polylines.removeWhere((element) => element.polylineId == id);
+        _polylines.add(Polyline(
+          polylineId: id,
+          color: Colors.black,
+          points: _polylineCoordinates,
+          width: 3,
+        ));
       });
     }
   }
 
-  LatLngBounds getBounds(List<Marker> markers) {
+  LatLngBounds _getBounds(List<Marker> markers) {
     var lngs = markers.map<double>((m) => m.position.longitude).toList();
     var lats = markers.map<double>((m) => m.position.latitude).toList();
 
