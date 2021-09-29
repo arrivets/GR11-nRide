@@ -7,6 +7,8 @@ This project is intended as a submission to
 [NKN's open innovation Gitcoin grant](https://gitcoin.co/issue/nknorg/nBounty/8/100026451),
 and welcomes new contributors. 
 
+Here is the demo video: https://www.youtube.com/watch?v=99owl1Bdnaw
+
 ## Getting Started
 
 This project is built with Flutter.
