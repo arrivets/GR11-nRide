@@ -29,10 +29,9 @@ of the [hackathon](https://gitcoin.co/issue/nknorg/nBounty/8/100026451).
     - [x] Passengers periodically publish their location to topic
     - [x] Riders respond to passengers through direct channel.
     - [x] Riders and passengers display markers on the map.
-  - [ ] Passengers send 'request' to available riders
-  - [ ] Riders automatically send a 'response'
-  - [ ] Passenger selects 'best' response and establishes 1-1 communication
-        with selected rider
-  - [ ] Realtime position updates between passenger and rider
+  - [x] Passengers send 'request' to available riders
+  - [x] Rider gets a notification with the ability to accept
+  - [x] Passenger receives a notification and has ability to confirm
+  - [x] Realtime position updates between passenger and rider
 - [ ] iOS 
 

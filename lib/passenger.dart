@@ -9,6 +9,7 @@ import 'package:nkn_sdk_flutter/client.dart';
 import 'package:nkn_sdk_flutter/wallet.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_place/google_place.dart';
+import 'package:uuid/uuid.dart';
 
 import 'utils.dart';
 
@@ -30,6 +31,7 @@ class PassengerViewState extends State<PassengerView> {
   LatLng _currentPosition = const LatLng(20, 20);
 
   // service to find destination addresses
+  final TextEditingController _inputController = TextEditingController();
   GooglePlace? _googlePlaceService;
   List<AutocompletePrediction> _predictions = [];
   bool _showPredictions = false;
@@ -42,7 +44,11 @@ class PassengerViewState extends State<PassengerView> {
   // client to connect to and use the NKN network
   Client? _nknClient;
 
-  final TextEditingController _inputController = TextEditingController();
+  // service for generating unique request ids
+  final _uuid = Uuid();
+  String? _requestId;
+  bool _requesting = false;
+  bool _confirmed = false;
 
   @override
   void initState() {
@@ -144,16 +150,19 @@ class PassengerViewState extends State<PassengerView> {
             ),
           ),
           Positioned(
-            left: 20,
-            right: 20,
-            bottom: 20,
-            child: (_destination != null)
-                ? ElevatedButton(
-                    onPressed: () {},
-                    child: const Text("Request pickup"),
-                  )
-                : Container(),
-          ),
+              left: 20,
+              right: 20,
+              bottom: 20,
+              child: (_destination != null && !_confirmed)
+                  ? ElevatedButton(
+                      onPressed: _requesting ? null : _requestPickup,
+                      child: _requesting
+                          ? const Text("Requesting pickup...")
+                          : const Text("Request pickup"),
+                    )
+                  : (_confirmed)
+                      ? Center(child: Text('Wait for your rider'))
+                      : Container()),
         ],
       ),
     );
@@ -226,13 +235,12 @@ class PassengerViewState extends State<PassengerView> {
       Timer.periodic(
         const Duration(seconds: 2),
         (Timer t) async {
-          var position = await _locationService.getLocation();
           _nknClient?.publishText(
             WorldTopic,
             jsonEncode(
               {
-                'latitude': position.latitude!,
-                'longitude': position.longitude!,
+                'latitude': _currentPosition.latitude,
+                'longitude': _currentPosition.longitude,
               },
             ),
           );
@@ -259,6 +267,17 @@ class PassengerViewState extends State<PassengerView> {
         return;
       }
 
+      // handle responses from drivers
+      var requestId = msg['request_id'];
+      if (requestId != null) {
+        if (_requesting && requestId == _requestId!) {
+          var msg = '$source accepted your request (${requestId!})';
+          _showConfirmDialog(msg);
+        }
+        return;
+      }
+
+      // if we got this far this is a simple position update
       // add or update markers
       var pos = LatLng(
         msg['latitude'],
@@ -370,5 +389,64 @@ class PassengerViewState extends State<PassengerView> {
     );
 
     return bounds;
+  }
+
+  Future<void> _requestPickup() async {
+    setState(
+      () => {
+        _requesting = true,
+        _requestId = _uuid.v1(),
+      },
+    );
+    _nknClient?.publishText(
+      WorldTopic,
+      jsonEncode(
+        {
+          'request': true,
+          'request_id': _requestId,
+          'start_latitude': _currentPosition.latitude,
+          'start_longitude': _currentPosition.longitude,
+          'dest_latitude': _destination!.latitude,
+          'dest_longitude': _destination!.longitude,
+        },
+      ),
+    );
+  }
+
+  Future<void> _showConfirmDialog(String msg) async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false, // user must tap button!
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Request Accepted'),
+          content: SingleChildScrollView(
+            child: Text(msg),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Confirm'),
+              onPressed: () {
+                setState(
+                  () => {
+                    _requesting = false,
+                  },
+                );
+                _nknClient?.publishText(
+                  WorldTopic,
+                  jsonEncode(
+                    {
+                      'confirm': true,
+                      'request_id': _requestId,
+                    },
+                  ),
+                );
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 }

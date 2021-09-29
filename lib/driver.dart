@@ -29,6 +29,9 @@ class DriverViewState extends State<DriverView> {
   // should be null when the state transition is complete.
   String? _status;
 
+  String? _pendingRequestId;
+  String? _requestSource;
+
   @override
   void initState() {
     super.initState();
@@ -54,13 +57,29 @@ class DriverViewState extends State<DriverView> {
           ),
         ],
       ),
-      body: GoogleMap(
-        zoomControlsEnabled: false,
-        initialCameraPosition:
-            CameraPosition(target: _initialCameraPostion, zoom: 15),
-        onMapCreated: _onMapCreated,
-        markers: _markers,
-      ),
+      body: Stack(children: <Widget>[
+        GoogleMap(
+          zoomControlsEnabled: false,
+          initialCameraPosition:
+              CameraPosition(target: _initialCameraPostion, zoom: 15),
+          onMapCreated: _onMapCreated,
+          markers: _markers,
+        ),
+        Positioned(
+          // this is a button that pops up when we receive a pickup request and
+          // disappears when the request is accepted and confirmed
+          left: 20,
+          right: 20,
+          bottom: 100,
+          child: (_pendingRequestId != null)
+              ? ElevatedButton(
+                  onPressed: _acceptRequest,
+                  child: Text(
+                      'Accept pickup request (${_pendingRequestId!.substring(0, 4)}...)'),
+                )
+              : Container(),
+        )
+      ]),
       floatingActionButton: (_subscribed)
           ? FloatingActionButton(
               onPressed: (_status == null) ? _leave : null,
@@ -182,7 +201,37 @@ class DriverViewState extends State<DriverView> {
         return;
       }
 
+      // handle pickup requests
+      var isRequest = msg['request'] ?? false;
+      if (isRequest) {
+        print('XXX in request');
+        var requestId = msg['request_id'];
+        if (requestId != null) {
+          setState(
+            () => {
+              _requestSource = source,
+              _pendingRequestId = requestId,
+            },
+          );
+          return;
+        }
+      }
+
+      // handle pickup confirm
+      var isConfirm = msg['confirm'] ?? false;
+      if (isConfirm) {
+        print('XXX in confirm');
+        var requestId = msg['request_id'];
+        if (requestId != null && requestId! == _pendingRequestId) {
+          var txt = '$source confirmed request (${requestId!})';
+          _showConfirmDialog(txt);
+        }
+        return;
+      }
+
+      // if we got this far, the message was a location update
       // add or update markers
+      print('XXX location update');
       var pos = LatLng(
         msg['latitude'],
         msg['longitude'],
@@ -257,5 +306,43 @@ class DriverViewState extends State<DriverView> {
                 (element) => element.markerId.value != MyLocationTag),
           });
     }
+  }
+
+  void _acceptRequest() async {
+    _nknClient!.sendText(
+      <String>[_requestSource!],
+      jsonEncode(
+        {
+          'request_id': _pendingRequestId!,
+        },
+      ),
+    );
+  }
+
+  Future<void> _showConfirmDialog(String msg) async {
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false, // user must tap button!
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Pickup Confirmed'),
+          content: SingleChildScrollView(
+            child: Text(msg),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('OK'),
+              onPressed: () {
+                setState(() => {
+                      _pendingRequestId = null,
+                      _requestSource = null,
+                    });
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 }
