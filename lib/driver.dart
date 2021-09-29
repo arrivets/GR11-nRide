@@ -55,6 +55,7 @@ class DriverViewState extends State<DriverView> {
         ],
       ),
       body: GoogleMap(
+        zoomControlsEnabled: false,
         initialCameraPosition:
             CameraPosition(target: _initialCameraPostion, zoom: 15),
         onMapCreated: _onMapCreated,

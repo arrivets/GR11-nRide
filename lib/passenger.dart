@@ -33,14 +33,16 @@ class PassengerViewState extends State<PassengerView> {
   GooglePlace? _googlePlaceService;
   List<AutocompletePrediction> _predictions = [];
   bool _showPredictions = false;
+  LatLng? _destination;
 
   // for drawing routes between current location and destination
   PolylinePoints? _polylinePointsService;
   final Set<Polyline> _polylines = {};
-  List<LatLng> _polylineCoordinates = [];
 
   // client to connect to and use the NKN network
   Client? _nknClient;
+
+  final TextEditingController _inputController = TextEditingController();
 
   @override
   void initState() {
@@ -66,6 +68,7 @@ class PassengerViewState extends State<PassengerView> {
       body: Stack(
         children: <Widget>[
           GoogleMap(
+            zoomControlsEnabled: false,
             initialCameraPosition:
                 CameraPosition(target: _initialCameraPostion, zoom: 15),
             onMapCreated: _onMapCreated,
@@ -78,6 +81,7 @@ class PassengerViewState extends State<PassengerView> {
             child: Column(
               children: <Widget>[
                 TextField(
+                  controller: _inputController,
                   decoration: InputDecoration(
                     filled: true,
                     fillColor: Colors.white,
@@ -128,7 +132,6 @@ class PassengerViewState extends State<PassengerView> {
                           ),
                           title: Text(_predictions[index].description!),
                           onTap: () async {
-                            debugPrint(_predictions[index].placeId);
                             await _chooseDestination(
                                 _predictions[index].placeId!);
                           },
@@ -139,6 +142,17 @@ class PassengerViewState extends State<PassengerView> {
                 ),
               ],
             ),
+          ),
+          Positioned(
+            left: 20,
+            right: 20,
+            bottom: 20,
+            child: (_destination != null)
+                ? ElevatedButton(
+                    onPressed: () {},
+                    child: const Text("Request pickup"),
+                  )
+                : Container(),
           ),
         ],
       ),
@@ -270,22 +284,37 @@ class PassengerViewState extends State<PassengerView> {
   }
 
   Future<void> _chooseDestination(String placeId) async {
+    // Hide keyboard
+    FocusScope.of(context).unfocus();
+
     // Get location details and draw a Marker
     DetailsResponse? details = await _googlePlaceService!.details.get(placeId);
     if (details != null && details.result != null && mounted) {
+      // set destination
+      _destination = LatLng(
+        details.result!.geometry!.location!.lat!,
+        details.result!.geometry!.location!.lng!,
+      );
+
+      // set the value of the text input
+      var address = details.result!.formattedAddress!;
+      _inputController.value = TextEditingValue(
+        text: address,
+        selection:
+            TextSelection.fromPosition(TextPosition(offset: address.length)),
+      );
+
+      // hide suggestions and draw destination marker
       setState(() {
         _showPredictions = false;
         _markers.add(Marker(
           markerId: const MarkerId(DestinationTag),
-          position: LatLng(
-            details.result!.geometry!.location!.lat!,
-            details.result!.geometry!.location!.lng!,
-          ),
+          position: _destination!,
           icon: BitmapDescriptor.defaultMarker,
         ));
       });
 
-      // Animate camera to include all markers in the screen
+      // animate camera to include all markers in the screen
       _mapController!.animateCamera(
         CameraUpdate.newLatLngBounds(
           _getBounds(_markers.toList()),
@@ -294,7 +323,6 @@ class PassengerViewState extends State<PassengerView> {
       );
 
       // Draw route between current location and destination
-
       PolylineResult polyRoute =
           await _polylinePointsService!.getRouteBetweenCoordinates(
         GoogleAPIKey, // Google Maps API Key
@@ -303,26 +331,24 @@ class PassengerViewState extends State<PassengerView> {
           _currentPosition.longitude,
         ),
         PointLatLng(
-          details.result!.geometry!.location!.lat!,
-          details.result!.geometry!.location!.lng!,
+          _destination!.latitude,
+          _destination!.longitude,
         ),
         travelMode: TravelMode.driving,
       );
-
+      List<LatLng> polylineCoordinates = [];
+      if (polyRoute.points.isNotEmpty) {
+        polyRoute.points.forEach((PointLatLng point) {
+          polylineCoordinates.add(LatLng(point.latitude, point.longitude));
+        });
+      }
       setState(() {
-        print('XXX updating polyline');
-        _polylineCoordinates = [];
-        if (polyRoute.points.isNotEmpty) {
-          polyRoute.points.forEach((PointLatLng point) {
-            _polylineCoordinates.add(LatLng(point.latitude, point.longitude));
-          });
-        }
         var id = const PolylineId('route');
         _polylines.removeWhere((element) => element.polylineId == id);
         _polylines.add(Polyline(
           polylineId: id,
           color: Colors.black,
-          points: _polylineCoordinates,
+          points: polylineCoordinates,
           width: 3,
         ));
       });
